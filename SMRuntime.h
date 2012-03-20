@@ -2,6 +2,8 @@ struct JSRuntime;
 struct JSContext;
 struct JSObject;
 
+void reportException(struct JSContext* cx);
+
 @interface SMRuntime : NSObject {
  @private
   struct JSRuntime* jsRuntime_;

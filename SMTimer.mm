@@ -1,6 +1,7 @@
 #import "SMTimer.h"
 
 #import "jsapi.h"
+#import "SMRuntime.h"
 
 @implementation SMTimer
 
@@ -59,7 +60,10 @@
   JS_BeginRequest(jsContext_);
 
   jsval retVal;
-  JS_CallFunctionValue(jsContext_, NULL, callback_, NULL, NULL, &retVal);
+  if (JS_CallFunctionValue(jsContext_, NULL, callback_, NULL, NULL, &retVal)
+      == JS_FALSE) {
+    reportException(jsContext_);
+  }
 
   JS_EndRequest(jsContext_);
 }

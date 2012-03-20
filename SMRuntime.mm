@@ -92,16 +92,65 @@ JSBool jsClearTimer(
 {
   assert(argc == 1);
   jsval timerIDJsval = argv[0];
-  assert(JSVAL_IS_OBJECT(timerIDJsval));
-  JSObject* timerID = JSVAL_TO_OBJECT(timerIDJsval);
+  if (JSVAL_IS_OBJECT(timerIDJsval) && !JSVAL_IS_NULL(timerIDJsval)) {
+    JSObject* timerID = JSVAL_TO_OBJECT(timerIDJsval);
 
-  SMTimer* timer = 
-      (SMTimer*)JS_GetInstancePrivate(cx, timerID, &jsTimerIDClass, NULL);
-  assert(timer);
+    SMTimer* timer = 
+        (SMTimer*)JS_GetInstancePrivate(cx, timerID, &jsTimerIDClass, NULL);
+    assert(timer);
 
-  [timer unregister];
+    [timer unregister];
+  }
 
   JS_SET_RVAL(cx, rval, JSVAL_VOID);
+  return JS_TRUE;
+}
+
+JSBool jsSetItem(
+    JSContext* cx, JSObject* obj, uintN argc, jsval *argv, jsval *rval)
+{
+  assert(argc == 2);
+  NSString* key = stringWithJsval(cx, argv[0]);
+  jsval valueJsval = argv[1];
+
+  [[NSUserDefaults standardUserDefaults] 
+      setObject:stringWithJsval(cx, valueJsval)
+         forKey:key];
+
+  JS_SET_RVAL(cx, rval, JSVAL_VOID);
+  return JS_TRUE;
+}
+
+JSBool jsRemoveItem(
+    JSContext* cx, JSObject* obj, uintN argc, jsval *argv, jsval *rval)
+{
+  assert(argc == 1);
+  NSString* key = stringWithJsval(cx, argv[0]);
+
+  [[NSUserDefaults standardUserDefaults] removeObjectForKey:key];
+
+  JS_SET_RVAL(cx, rval, JSVAL_VOID);
+  return JS_TRUE;
+}
+
+JSBool jsGetItem(
+    JSContext* cx, JSObject* obj, uintN argc, jsval *argv, jsval *rval)
+{
+  assert(argc == 1);
+  NSString* key = stringWithJsval(cx, argv[0]);
+
+  NSString* value = [[NSUserDefaults standardUserDefaults] objectForKey:key];
+  if (value) {
+    jsval valueJsval =
+        STRING_TO_JSVAL(
+            JS_NewUCStringCopyZ(
+                cx, 
+                (jschar*)[value cStringUsingEncoding:
+                    NSUnicodeStringEncoding]));
+    JS_SET_RVAL(cx, rval, valueJsval);
+  } else {
+    JS_SET_RVAL(cx, rval, JSVAL_VOID);
+  }
   return JS_TRUE;
 }
 
@@ -115,7 +164,17 @@ void reportError(JSContext* cx, const char* message, JSErrorReport* report)
 
 void reportException(JSContext* cx) {
   if (JS_IsExceptionPending(cx) == JS_TRUE) {
+    jsval exception;
+    assert(JS_GetPendingException(cx, &exception) == JS_TRUE);
     JS_ReportPendingException(cx);
+
+    JSObject* exceptionObject;
+    assert(JS_ValueToObject(cx, exception, &exceptionObject) == JS_TRUE);
+    jsval stack;
+    assert(JS_GetProperty(cx, exceptionObject, "stack", &stack) == JS_TRUE);
+    NSLog(@"Stack trace:\n%@", stringWithJsval(cx, stack));
+  } else {
+    assert(false);
   }
 
   assert(false);
@@ -146,7 +205,8 @@ static JSClass jsGlobalClass = {
   JS_SetOptions(
       jsContext_, 
       //JS_GetOptions(jsContext_)
-      JSOPTION_VAROBJFIX | JSOPTION_COMPILE_N_GO);
+      JSOPTION_VAROBJFIX | JSOPTION_COMPILE_N_GO 
+      | JSOPTION_DONT_REPORT_UNCAUGHT);
       //| JSVERSION_LATEST);
   JS_SetVersion(jsContext_, JSVERSION_LATEST);
   //JS_ToggleOptions(jsContext_, JSOPTION_XML);
@@ -187,6 +247,18 @@ static JSClass jsGlobalClass = {
       NULL, NULL, 0);
   JS_DefineFunction(jsContext_, consoleObject, "log", jsLog, 1, 0);
   JS_DefineFunction(jsContext_, consoleObject, "error", jsLog, 1, 0);
+
+  // Create the localStorage object with setItem and getItem functions.
+  JSObject* localStorageObject = JS_NewObject(jsContext_, NULL, NULL, NULL);
+  JS_DefineProperty(
+      jsContext_, jsGlobalObject_, "localStorage", 
+      OBJECT_TO_JSVAL(localStorageObject), NULL, NULL, 0);
+  JS_DefineFunction(
+      jsContext_, localStorageObject, "getItem", jsGetItem, 1, 0);
+  JS_DefineFunction(
+      jsContext_, localStorageObject, "setItem", jsSetItem, 2, 0);
+  JS_DefineFunction(
+      jsContext_, localStorageObject, "removeItem", jsRemoveItem, 1, 0);
 
   // Create the document object.
   JSObject* documentObject = JS_NewObject(jsContext_, NULL, NULL, NULL);
